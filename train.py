@@ -20,7 +20,7 @@ IN_DIR = 'F:\\mars_dataset\\'
 MODEL_RESTORE = None
 MODEL_OUT_DIR = 'F:\\reid_model\\'
 TARGET_SIZE = (224, 112)
-BATCH_SIZE = 16
+BATCH_SIZE = 128
 
 augm = iaa.Sequential([
     iaa.GaussianBlur((0, 1.0), name="GaussianBlur"),
@@ -32,7 +32,7 @@ augm = iaa.Sequential([
     iaa.SomeOf((0, 2), [
         iaa.Add((-30, 30), per_channel=0.2),  # change brightness of images (by -10 to 10 of original value)
         iaa.AddToHueAndSaturation((-20, 20)),  # change hue and saturation
-        iaa.Multiply((0.7, 1.3), per_channel=0.2),
+        iaa.Multiply((0.8, 1.2), per_channel=0.2),
         iaa.ContrastNormalization((0.8, 1.2), per_channel=0.2),  # improve or worsen the contrast
     ])
 ])
@@ -68,7 +68,7 @@ if __name__ == '__main__':
     if MODEL_RESTORE is not None:
         optimizer = K.optimizers.RMSprop(lr=0.0001, decay=0.03)
     else:
-        optimizer = K.optimizers.RMSprop(lr=0.0005, decay=0.03)
+        optimizer = K.optimizers.RMSprop(lr=0.001, decay=0.03)
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -85,4 +85,5 @@ if __name__ == '__main__':
             K.callbacks.ModelCheckpoint(
                 os.path.join(MODEL_OUT_DIR, "weights_.{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}.hdf5"),
                 save_best_only=True)
-        ])
+        ],
+        class_weight=generator.obtain_class_weights())

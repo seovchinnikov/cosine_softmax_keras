@@ -9,6 +9,7 @@ import numpy as np
 import cv2
 from keras.utils import Sequence
 import logging
+from sklearn.utils.class_weight import compute_class_weight
 
 random.seed(0)
 np.random.seed(0)
@@ -32,13 +33,20 @@ class Generator:
 
         self.name_to_idx = {}
         self.idx_to_name = {}
+        self.classes_elements_num = {}
+        self.max_classes_elements_num = 0
         for i, cat in enumerate(cats_folders):
+            cnt = 0
             for img_path in glob.glob(ds_folder + SEPARATOR + str(cat) + SEPARATOR + '*.jpg') + \
                             glob.glob(ds_folder + SEPARATOR + str(cat) + SEPARATOR + '*.png'):
                 self.ds_imgs.append(img_path)
                 self.ds_labels.append(i)
-                self.name_to_idx[cat] = i
-                self.idx_to_name[i] = cat
+                cnt += 1
+
+            self.max_classes_elements_num = max([self.max_classes_elements_num, cnt])
+            self.name_to_idx[cat] = i
+            self.idx_to_name[i] = cat
+            self.classes_elements_num[i] = cnt
 
         self.ds_imgs = np.asarray(self.ds_imgs)
         self.ds_labels = np.asarray(self.ds_labels)
@@ -64,6 +72,15 @@ class Generator:
         logger.debug("total %s img in train", self.train_length)
         logger.debug("total %s img in val", self.val_length)
         logger.debug("total %s categories", self.cats_num)
+
+    def obtain_class_weights(self):
+        # res = {}
+        # for item, val in self.classes_elements_num.items():
+        #     res[item] = float(self.max_classes_elements_num) / (val + 1)
+        #
+        class_weights = compute_class_weight('balanced', np.array(range(self.cats_num)), self.ds_labels)
+        res = dict(enumerate(class_weights))
+        return res
 
     class InnerGenerator(Sequence):
 
