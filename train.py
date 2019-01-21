@@ -18,7 +18,7 @@ from cosine_softmax import CosineSoftmax
 from generator import Generator
 
 IN_DIR = '/home/farmer/reid/data/'
-MODEL_RESTORE = None
+MODEL_RESTORE = None#'/hdd/reid/models/weights_.04-6.67-0.26.hdf5'
 MODEL_OUT_DIR = '/hdd/reid/models/'
 TARGET_SIZE = (224, 112)
 BATCH_SIZE = 128
@@ -110,7 +110,7 @@ if __name__ == '__main__':
     if MODEL_RESTORE is not None:
         optimizer = K.optimizers.RMSprop(lr=0.0001, decay=0.03)
     else:
-        optimizer = K.optimizers.RMSprop(lr=0.001, decay=0.03)
+        optimizer = K.optimizers.RMSprop(lr=0.002, decay=0.01)
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
@@ -129,4 +129,4 @@ if __name__ == '__main__':
                 save_best_only=True)
         ],
         use_multiprocessing=True, workers=3,
-        class_weight=generator.obtain_class_weights())
+        class_weight=None)

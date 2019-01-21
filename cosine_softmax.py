@@ -4,7 +4,7 @@ from keras.layers import Layer
 
 class CosineSoftmax(Layer):
     def __init__(self, output_dim, kernel_initializer=initializers.glorot_uniform(), kernel_regularizer=None,
-                 k_initializer=initializers.Constant(value=1), k_regularizer=regularizers.l2(1e-1), **kwargs):
+                 k_initializer=initializers.Constant(value=0.), k_regularizer=regularizers.l2(1e-1), **kwargs):
         self.output_dim = output_dim
         self.k_initializer = k_initializer
         self.k_regularizer = k_regularizer
@@ -26,7 +26,7 @@ class CosineSoftmax(Layer):
         super(CosineSoftmax, self).build(input_shape)
 
     def call(self, x, **kwargs):
-        return K.softmax(self.k * K.dot(K.l2_normalize(x, axis=1), K.l2_normalize(self.kernel, axis=0)))
+        return K.softmax(K.softplus(self.k) * K.dot(K.l2_normalize(x, axis=1), K.l2_normalize(self.kernel, axis=0)))
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], self.output_dim)
