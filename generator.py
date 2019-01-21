@@ -99,23 +99,24 @@ class Generator:
                 images = self.outer.ds_imgs[inds]
                 labels = self.outer.ds_labels[inds]
 
-                labels_x = []
                 labels_y = []
-
+                imgs = []
                 for i in range(self.outer.batch_size):
                     img = cv2.imread(images[i])
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    if self.is_train and self.outer.augmenter is not None:
-                        img = self.outer.augmenter(np.asarray([img]))[0]
-
                     img = cv2.resize(img, (self.outer.w, self.outer.h))
-                    if self.outer.preprocessor is not None:
-                        img = self.outer.preprocessor(img)
 
-                    labels_x.append(img)
+                    imgs.append(img)
                     labels_y.append(K.utils.to_categorical([int(labels[i])], num_classes=self.outer.cats_num)[0])
 
-                labels_x = np.asarray(labels_x)
+                imgs = np.array(imgs)
+                if self.is_train and self.outer.augmenter is not None:
+                    imgs = self.outer.augmenter(imgs)
+
+                if self.outer.preprocessor is not None:
+                    imgs = self.outer.preprocessor(imgs)
+
+                labels_x = imgs
                 labels_y = np.asarray(labels_y)
 
                 return labels_x, labels_y

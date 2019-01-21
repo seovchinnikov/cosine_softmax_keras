@@ -26,7 +26,7 @@ class CosineSoftmax(Layer):
         super(CosineSoftmax, self).build(input_shape)
 
     def call(self, x, **kwargs):
-        return K.softmax(self.k * K.dot(K.l2_normalize(x, axis=-1), K.l2_normalize(self.kernel, axis=-1)))
+        return K.softmax(self.k * K.dot(K.l2_normalize(x, axis=1), K.l2_normalize(self.kernel, axis=0)))
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], self.output_dim)
