@@ -27,6 +27,7 @@ class Generator:
         cats_folders = list(sorted([name for name in os.listdir(ds_folder)
                                     if os.path.isdir(ds_folder + SEPARATOR + name)]))
 
+        self.random_state = np.random.RandomState(1234)
         self.ds_imgs = []
         self.ds_labels = []
         logger.debug("start init of dataset")
@@ -61,7 +62,7 @@ class Generator:
         self.augmenter = augmenter
         self.preprocessor = preprocessor
 
-        np.random.shuffle(self.all_indices)
+        self.random_state.shuffle(self.all_indices)
 
         self.train_indices, self.val_indices = np.split(self.all_indices,
                                                         [int((1 - val_to_train) * self.all_length)])
@@ -91,7 +92,7 @@ class Generator:
             self.is_train = is_train
 
         def on_epoch_end(self):
-            np.random.shuffle(self.indixes)
+            self.outer.random_state.shuffle(self.indixes)
 
         def __getitem__(self, idx):
             try:

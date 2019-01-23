@@ -4,12 +4,12 @@ import os
 import math
 
 import os
-
+import tensorflow as tf
 import keras as K
 from keras.backend import image_data_format
 from keras.engine import Model
 from keras.layers import GlobalAveragePooling2D, Activation, Dropout, Conv2D, Reshape
-from keras.applications import MobileNetV2, keras_modules_injection
+from keras.applications import keras_modules_injection
 from keras.applications.mobilenet import preprocess_input
 from imgaug import augmenters as iaa
 import imgaug as ia
@@ -17,13 +17,19 @@ import mobilenet_custom
 from cosine_softmax import CosineSoftmax
 from generator import Generator
 
+from keras.backend.tensorflow_backend import set_session
+config = tf.ConfigProto()
+config.gpu_options.allow_growth = True
+set_session(tf.Session(config=config))
+
 IN_DIR = '/home/farmer/reid/data/'
-MODEL_RESTORE = None#'/hdd/reid/models/weights_.04-6.67-0.26.hdf5'
+MODEL_RESTORE = None  # '/hdd/reid/models/weights_.04-6.67-0.26.hdf5'
 MODEL_OUT_DIR = '/hdd/reid/models/'
 TARGET_SIZE = (224, 112)
 BATCH_SIZE = 128
-DROPOUT_LAST_LAYER = 0.
 ENCODER_SHAPE = 128
+DROPOUT_LAST_LAYER = 0.25
+DROPOUT_MIDDLE_LAYER = 0.75
 
 sometimes03 = lambda aug: iaa.Sometimes(0.3, aug)
 sometimes05 = lambda aug: iaa.Sometimes(0.5, aug)
@@ -35,7 +41,6 @@ augm_hard = iaa.Sequential([
         iaa.AdditiveGaussianNoise(scale=(0, 0.01 * 255), name="LittleNoise")
     ]),
     sometimes05(iaa.Affine(rotate=(-20, 20), scale=(0.8, 1.2), translate_percent=(0, 0.1))),
-    # rotate by -45 to +45 degrees, name="Affine"),,
     sometimes05(iaa.CropAndPad(
         percent=(-0.1, 0.1),
         pad_mode=ia.ALL,
@@ -46,6 +51,26 @@ augm_hard = iaa.Sequential([
         iaa.AddToHueAndSaturation((-20, 20)),  # change hue and saturation
         iaa.Multiply((0.8, 1.2), per_channel=0.2),
         iaa.ContrastNormalization((0.8, 1.2), per_channel=0.2),  # improve or worsen the contrast
+    ])
+])
+
+augm_middle = iaa.Sequential([
+    sometimes03(iaa.GaussianBlur((0, 1.0), name="GaussianBlur")),
+    iaa.SomeOf((0, 1), [
+        iaa.Dropout((0, 0.1), name="Dropout"),
+        iaa.AdditiveGaussianNoise(scale=(0, 0.01 * 255), name="LittleNoise")
+    ]),
+    sometimes05(iaa.Affine(rotate=(-10, 10), scale=(0.9, 1.1), translate_percent=(0, 0.07))),
+    sometimes05(iaa.CropAndPad(
+        percent=(-0.07, 0.07),
+        pad_mode=ia.ALL,
+        pad_cval=(0, 255)
+    )),
+    iaa.SomeOf((0, 2), [
+        iaa.Add((-15, 15), per_channel=0.2),  # change brightness of images (by -10 to 10 of original value)
+        iaa.AddToHueAndSaturation((-15, 15)),  # change hue and saturation
+        iaa.Multiply((0.9, 1.1), per_channel=0.2),
+        iaa.ContrastNormalization((0.9, 1.1), per_channel=0.2),  # improve or worsen the contrast
     ])
 ])
 
@@ -65,15 +90,8 @@ augm_easy = iaa.Sequential([
 ])
 
 
-def create_model_mobilenet(model_to_restore, in_shape, out_shape):
-    @keras_modules_injection
-    def MobileNetV2(*args, **kwargs):
-        return mobilenet_custom.MobileNetV2(*args, **kwargs)
-
-    base_model = MobileNetV2(alpha=1.0, input_shape=in_shape, include_top=False,
-                             weights='imagenet', pooling=None)
-    base_model_out = base_model.get_layer('out_relu').output
-
+def mobilenet_out_prepare(layer, name, dropout=0.):
+    base_model_out = layer.output
     dim_out = base_model_out.shape[3]
     if image_data_format() == 'channels_first':
         shape = (int(dim_out), 1, 1)
@@ -81,10 +99,28 @@ def create_model_mobilenet(model_to_restore, in_shape, out_shape):
         shape = (1, 1, int(dim_out))
 
     x = GlobalAveragePooling2D()(base_model_out)
-    x = Reshape(shape, name='reshape_last')(x)
-    x = Dropout(DROPOUT_LAST_LAYER, name='dropout_last')(x)
+    x = Reshape(shape, name='reshape_' + name)(x)
+    x = Dropout(dropout, name='dropout_' + name)(x)
+    return x
+
+
+def create_model_mobilenet(model_to_restore, in_shape, out_shape):
+    @keras_modules_injection
+    def MobileNetV2(*args, **kwargs):
+        return mobilenet_custom.MobileNetV2(*args, **kwargs)
+
+    base_model = MobileNetV2(alpha=1.0, input_shape=in_shape, include_top=False,
+                             weights='imagenet', pooling=None)
+
+    #out_5 = mobilenet_out_prepare(base_model.get_layer('block_5_add'), '5', dropout=DROPOUT_MIDDLE_LAYER)
+    #out_9 = mobilenet_out_prepare(base_model.get_layer('block_9_add'), '9', dropout=DROPOUT_MIDDLE_LAYER)
+    out_12 = mobilenet_out_prepare(base_model.get_layer('block_12_add'), '12', dropout=DROPOUT_MIDDLE_LAYER)
+    out_15 = mobilenet_out_prepare(base_model.get_layer('block_15_add'), '15', dropout=DROPOUT_MIDDLE_LAYER)
+    out_last = mobilenet_out_prepare(base_model.get_layer('out_relu'), 'last', dropout=DROPOUT_LAST_LAYER)
+    out_last = K.layers.concatenate([out_12, out_15, out_last], axis=-1)
+
     x = Conv2D(ENCODER_SHAPE, (1, 1),
-               padding='same', name='conv_preds0_last')(x)
+               padding='same', name='conv_preds0_last')(out_last)
     x = K.layers.BatchNormalization(epsilon=1e-3,
                                     momentum=0.999,
                                     name='Conv_bn_last')(x)
@@ -104,13 +140,14 @@ def create_model_mobilenet(model_to_restore, in_shape, out_shape):
 if __name__ == '__main__':
     generator = Generator(IN_DIR, BATCH_SIZE, TARGET_SIZE[1], TARGET_SIZE[0],
                           val_to_train=0.15, preprocessor=preprocess_input,
-                          augmenter=augm_easy.augment_images)  # augm.augment_images)
+                          augmenter=augm_hard.augment_images)  # augm.augment_images)
     model = create_model_mobilenet(MODEL_RESTORE, (TARGET_SIZE[0], TARGET_SIZE[1], 3), generator.cats_num)
 
     if MODEL_RESTORE is not None:
         optimizer = K.optimizers.RMSprop(lr=0.0001, decay=0.03)
     else:
-        optimizer = K.optimizers.RMSprop(lr=0.002, decay=0.01)
+        optimizer = K.optimizers.Adam(lr=0.0001)
+        #optimizer = K.optimizers.RMSprop(lr=0.002, decay=0.01)
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
