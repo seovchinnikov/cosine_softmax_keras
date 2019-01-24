@@ -18,6 +18,9 @@ from cosine_softmax import CosineSoftmax
 from generator import Generator
 
 from keras.backend.tensorflow_backend import set_session
+
+from utils import cmc_callback
+
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 set_session(tf.Session(config=config))
@@ -109,7 +112,7 @@ def create_model_mobilenet(model_to_restore, in_shape, out_shape):
     def MobileNetV2(*args, **kwargs):
         return mobilenet_custom.MobileNetV2(*args, **kwargs)
 
-    base_model = MobileNetV2(alpha=1.0, input_shape=in_shape, include_top=False,
+    base_model = MobileNetV2(alpha=1.3, input_shape=in_shape, include_top=False,
                              weights='imagenet', pooling=None)
 
     #out_5 = mobilenet_out_prepare(base_model.get_layer('block_5_add'), '5', dropout=DROPOUT_MIDDLE_LAYER)
@@ -151,7 +154,7 @@ if __name__ == '__main__':
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
     model.summary()
-    out = open(os.path.join(os.path.normpath(MODEL_OUT_DIR), "model_v2.json"), "w")
+    out = open(os.path.join(os.path.normpath(MODEL_OUT_DIR), "model_13_v2.json"), "w")
     out.write(model.to_json())
     out.close()
 
@@ -162,8 +165,9 @@ if __name__ == '__main__':
         validation_data=generator.make_val_generator(),
         callbacks=[
             K.callbacks.ModelCheckpoint(
-                os.path.join(MODEL_OUT_DIR, "weights_.{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}.hdf5"),
-                save_best_only=True)
+                os.path.join(MODEL_OUT_DIR, "weights_13_.{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}.hdf5"),
+                save_best_only=True),
+            cmc_callback()
         ],
         use_multiprocessing=True, workers=3,
         class_weight=None)
