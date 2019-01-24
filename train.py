@@ -19,7 +19,7 @@ from generator import Generator
 
 from keras.backend.tensorflow_backend import set_session
 
-from utils import cmc_callback
+from eval_utils import cmc_callback
 
 config = tf.ConfigProto()
 config.gpu_options.allow_growth = True

@@ -141,20 +141,29 @@ def compute_cmc(model, generator, k=1, gal_num=10):
     batches = len(generator)
     vectors = []
     labels = []
+    cameras_info = []
     for i in tqdm.tqdm(range(batches)):
-        batch_x, batch_y = generator[i]
+        cameras = None
+        if generator.with_camera_info:
+            batch_x, batch_y, cameras = generator[i]
+        else:
+            batch_x, batch_y = generator[i]
         batch_vec = model.predict_on_batch(batch_x)
         vecs = batch_vec / np.expand_dims(np.linalg.norm(batch_vec, ord=2, axis=1), axis=1)
         vectors.extend(vecs.tolist())
         labels.extend(batch_y.tolist())
+        if cameras is not None:
+            cameras_info.extend(cameras)
 
+    cameras_info = np.array(cameras_info) if len(cameras_info) > 0 else None
     vectors = np.array(vectors)
     labels = np.array(labels)
     labels = np.argmax(labels, axis=1)
 
     cmc_sum = 0
     for i in tqdm.tqdm(range(gal_num)):
-        prob_i, gal_i = _create_cmc_probe_and_gallery(labels)
+        prob_i, gal_i = _create_cmc_probe_and_gallery(labels,
+                                                      camera_indices=cameras_info)
 
         query_ids = labels[prob_i]
         gallery_ids = labels[gal_i]

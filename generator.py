@@ -2,6 +2,8 @@ import glob
 import math
 import pickle
 import random
+import re
+
 import tensorflow as tf
 import keras as K
 import os
@@ -23,10 +25,12 @@ SEPARATOR = os.path.sep
 
 
 class Generator:
-    def __init__(self, ds_folder, batch_size=64, w=64, h=128, val_to_train=0.15, augmenter=None, preprocessor=None):
+    def __init__(self, ds_folder, batch_size=64, w=64, h=128, val_to_train=0.15,
+                 augmenter=None, preprocessor=None, with_camera_info=False, camera_pattern='C(.*)T'):
         cats_folders = list(sorted([name for name in os.listdir(ds_folder)
                                     if os.path.isdir(ds_folder + SEPARATOR + name)]))
-
+        self.camera_pattern = camera_pattern
+        self.with_camera_info = with_camera_info
         self.random_state = np.random.RandomState(1234)
         self.ds_imgs = []
         self.ds_labels = []
@@ -90,6 +94,7 @@ class Generator:
             self.outer = outer
             self.length = self.indixes.shape[0]
             self.is_train = is_train
+            self.with_camera_info = self.outer.with_camera_info
 
         def on_epoch_end(self):
             self.outer.random_state.shuffle(self.indixes)
@@ -102,6 +107,7 @@ class Generator:
 
                 labels_y = []
                 imgs = []
+                cameras = []
                 for i in range(self.outer.batch_size):
                     img = cv2.imread(images[i])
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -109,6 +115,7 @@ class Generator:
 
                     imgs.append(img)
                     labels_y.append(K.utils.to_categorical([int(labels[i])], num_classes=self.outer.cats_num)[0])
+                    cameras.append(re.search(self.outer.camera_pattern, images[i]).group(1))
 
                 imgs = np.array(imgs)
                 if self.is_train and self.outer.augmenter is not None:
@@ -119,8 +126,12 @@ class Generator:
 
                 labels_x = imgs
                 labels_y = np.asarray(labels_y)
+                cameras = np.asarray(cameras)
 
-                return labels_x, labels_y
+                if self.outer.with_camera_info:
+                    return labels_x, labels_y, cameras
+                else:
+                    return labels_x, labels_y
             except Exception as e:
                 logger.exception("error on generation")
 
