@@ -13,9 +13,6 @@ from keras.utils import Sequence
 import logging
 from sklearn.utils.class_weight import compute_class_weight
 
-random.seed(0)
-np.random.seed(0)
-tf.set_random_seed(0)
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -26,9 +23,11 @@ SEPARATOR = os.path.sep
 
 class Generator:
     def __init__(self, ds_folder, batch_size=64, w=64, h=128, val_to_train=0.15,
-                 augmenter=None, preprocessor=None, with_camera_info=False, camera_pattern='C(.*)T'):
+                 augmenter=None, preprocessor=None, with_camera_info=False, camera_pattern='C(.*)T', cat_based=True):
         cats_folders = list(sorted([name for name in os.listdir(ds_folder)
                                     if os.path.isdir(ds_folder + SEPARATOR + name)]))
+
+        self.cat_based = cat_based
         self.camera_pattern = camera_pattern
         self.with_camera_info = with_camera_info
         self.random_state = np.random.RandomState(1234)
@@ -40,6 +39,8 @@ class Generator:
         self.idx_to_name = {}
         self.classes_elements_num = {}
         self.max_classes_elements_num = 0
+        cats_folders = list(cats_folders)
+        random.Random(1234).shuffle(cats_folders)
         for i, cat in enumerate(cats_folders):
             cnt = 0
             for img_path in glob.glob(ds_folder + SEPARATOR + str(cat) + SEPARATOR + '*.jpg') + \
@@ -55,7 +56,6 @@ class Generator:
 
         self.ds_imgs = np.asarray(self.ds_imgs)
         self.ds_labels = np.asarray(self.ds_labels)
-        self.all_indices = np.arange(self.ds_imgs.shape[0])
         self.all_length = self.ds_imgs.shape[0]
         self.batch_size = batch_size
         self.w = w
@@ -66,10 +66,17 @@ class Generator:
         self.augmenter = augmenter
         self.preprocessor = preprocessor
 
-        self.random_state.shuffle(self.all_indices)
-
-        self.train_indices, self.val_indices = np.split(self.all_indices,
-                                                        [int((1 - val_to_train) * self.all_length)])
+        all_indices = np.arange(self.ds_imgs.shape[0])
+        if not self.cat_based:
+            self.random_state.shuffle(all_indices)
+            self.train_indices, self.val_indices = np.split(all_indices,
+                                                            [int((1 - val_to_train) * self.all_length)])
+        else:
+            cats = np.unique(self.ds_labels)
+            cats_train = self.random_state.choice(cats, int(cats.shape[0] * (1 - val_to_train)), replace=False)
+            self.train_indices = all_indices[np.isin(self.ds_labels, cats_train)]
+            self.val_indices = all_indices[~np.isin(self.ds_labels, cats_train)]
+            logger.debug("total %s cats in train", cats_train.shape[0])
 
         self.train_length = self.train_indices.shape[0]
         self.val_length = self.val_indices.shape[0]
@@ -108,14 +115,15 @@ class Generator:
                 labels_y = []
                 imgs = []
                 cameras = []
-                for i in range(self.outer.batch_size):
+                for i in range(inds.shape[0]):
                     img = cv2.imread(images[i])
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
                     img = cv2.resize(img, (self.outer.w, self.outer.h))
 
                     imgs.append(img)
                     labels_y.append(K.utils.to_categorical([int(labels[i])], num_classes=self.outer.cats_num)[0])
-                    cameras.append(re.search(self.outer.camera_pattern, images[i]).group(1))
+                    if self.outer.with_camera_info:
+                        cameras.append(re.search(self.outer.camera_pattern, images[i]).group(1))
 
                 imgs = np.array(imgs)
                 if self.is_train and self.outer.augmenter is not None:
@@ -136,7 +144,7 @@ class Generator:
                 logger.exception("error on generation")
 
         def __len__(self):
-            return int(math.ceil(float(self.length) / self.outer.batch_size)) - 1
+            return int(math.ceil(float(self.length) / self.outer.batch_size))
 
     def make_train_generator(self):
         return Generator.InnerGenerator(self, self.train_indices, True)

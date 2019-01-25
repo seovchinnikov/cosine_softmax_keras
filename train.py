@@ -25,12 +25,12 @@ config = tf.ConfigProto()
 config.gpu_options.allow_growth = True
 set_session(tf.Session(config=config))
 
-IN_DIR = '/home/farmer/reid/data/'
+IN_DIR = '/home/farmer/reid/data_combined/'
 MODEL_RESTORE = None  # '/hdd/reid/models/weights_.04-6.67-0.26.hdf5'
 MODEL_OUT_DIR = '/hdd/reid/models/'
 TARGET_SIZE = (224, 112)
 BATCH_SIZE = 128
-ENCODER_SHAPE = 128
+ENCODER_SHAPE = 1024
 DROPOUT_LAST_LAYER = 0.25
 DROPOUT_MIDDLE_LAYER = 0.75
 
@@ -45,7 +45,7 @@ augm_hard = iaa.Sequential([
     ]),
     sometimes05(iaa.Affine(rotate=(-20, 20), scale=(0.8, 1.2), translate_percent=(0, 0.1))),
     sometimes05(iaa.CropAndPad(
-        percent=(-0.1, 0.1),
+        percent=(-0.15, 0.3),
         pad_mode=ia.ALL,
         pad_cval=(0, 255)
     )),
@@ -118,16 +118,17 @@ def create_model_mobilenet(model_to_restore, in_shape, out_shape):
     #out_5 = mobilenet_out_prepare(base_model.get_layer('block_5_add'), '5', dropout=DROPOUT_MIDDLE_LAYER)
     #out_9 = mobilenet_out_prepare(base_model.get_layer('block_9_add'), '9', dropout=DROPOUT_MIDDLE_LAYER)
     out_12 = mobilenet_out_prepare(base_model.get_layer('block_12_add'), '12', dropout=DROPOUT_MIDDLE_LAYER)
+    out_14 = mobilenet_out_prepare(base_model.get_layer('block_14_add'), '14', dropout=DROPOUT_MIDDLE_LAYER)
     out_15 = mobilenet_out_prepare(base_model.get_layer('block_15_add'), '15', dropout=DROPOUT_MIDDLE_LAYER)
     out_last = mobilenet_out_prepare(base_model.get_layer('out_relu'), 'last', dropout=DROPOUT_LAST_LAYER)
-    out_last = K.layers.concatenate([out_12, out_15, out_last], axis=-1)
+    out_last = K.layers.concatenate([out_12, out_14, out_15, out_last], axis=-1)
 
     x = Conv2D(ENCODER_SHAPE, (1, 1),
-               padding='same', name='conv_preds0_last')(out_last)
+               padding='same', name='conv_preds0_last', activation=None)(out_last)
     x = K.layers.BatchNormalization(epsilon=1e-3,
                                     momentum=0.999,
                                     name='Conv_bn_last')(x)
-    x = K.layers.ReLU(6., name='pre_encoding')(x)
+    # x = K.layers.ReLU(6., name='pre_encoding')(x)
     x = Reshape((ENCODER_SHAPE,), name='encoding')(x)
     preds = CosineSoftmax(output_dim=out_shape)(x)
     model = Model(inputs=base_model.inputs, outputs=preds)
@@ -149,7 +150,7 @@ if __name__ == '__main__':
     if MODEL_RESTORE is not None:
         optimizer = K.optimizers.RMSprop(lr=0.0001, decay=0.03)
     else:
-        optimizer = K.optimizers.Adam(lr=0.0001)
+        optimizer = K.optimizers.Adam(lr=0.0005)
         #optimizer = K.optimizers.RMSprop(lr=0.002, decay=0.01)
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
@@ -158,16 +159,17 @@ if __name__ == '__main__':
     out.write(model.to_json())
     out.close()
 
+    val_gen = generator.make_val_generator()
     model.fit_generator(
         generator.make_train_generator(),
-        epochs=100,
-        verbose=1,
-        validation_data=generator.make_val_generator(),
+        epochs=200,
+        verbose=2,
+        validation_data=val_gen,
         callbacks=[
             K.callbacks.ModelCheckpoint(
-                os.path.join(MODEL_OUT_DIR, "weights_13_.{epoch:02d}-{val_loss:.2f}-{val_acc:.2f}.hdf5"),
-                save_best_only=True),
-            cmc_callback()
+                os.path.join(MODEL_OUT_DIR, "weights_13_.{epoch:02d}-{val_loss:.2f}-{acc:.2f}.hdf5"),
+                save_best_only=False),
+            cmc_callback(val_gen)
         ],
         use_multiprocessing=True, workers=3,
         class_weight=None)

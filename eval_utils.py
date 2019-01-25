@@ -174,9 +174,9 @@ def compute_cmc(model, generator, k=1, gal_num=10):
     return cmc_sum / gal_num
 
 
-def cmc_callback():
+def cmc_callback(generator):
     class CMC(K.callbacks.Callback):
         def on_epoch_end(self, epoch, logs=None):
-            print('CMC_i: ', compute_cmc(self.model, self.validation_data, k=5))
+            print('epoch ', epoch, ', CMC_i: ', compute_cmc(self.model, generator, k=5))
 
     return CMC()
