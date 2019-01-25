@@ -30,7 +30,7 @@ MODEL_RESTORE = None  # '/hdd/reid/models/weights_.04-6.67-0.26.hdf5'
 MODEL_OUT_DIR = '/hdd/reid/models/'
 TARGET_SIZE = (224, 112)
 BATCH_SIZE = 128
-ENCODER_SHAPE = 1024
+ENCODER_SHAPE = 128
 DROPOUT_LAST_LAYER = 0.25
 DROPOUT_MIDDLE_LAYER = 0.75
 
@@ -123,11 +123,16 @@ def create_model_mobilenet(model_to_restore, in_shape, out_shape):
     out_last = mobilenet_out_prepare(base_model.get_layer('out_relu'), 'last', dropout=DROPOUT_LAST_LAYER)
     out_last = K.layers.concatenate([out_12, out_14, out_15, out_last], axis=-1)
 
-    x = Conv2D(ENCODER_SHAPE, (1, 1),
-               padding='same', name='conv_preds0_last', activation=None)(out_last)
+    x = Conv2D(512, (1, 1),
+               padding='valid', name='conv_preds0_prelast', activation=None)(out_last)
     x = K.layers.BatchNormalization(epsilon=1e-3,
                                     momentum=0.999,
-                                    name='Conv_bn_last')(x)
+                                    name='Conv_bn_prelast')(x)
+    x = K.layers.ReLU(6., name='pre_preencoding')(x)
+    ####
+
+    x = Conv2D(ENCODER_SHAPE, (1, 1),
+               padding='valid', name='conv_preds0_last', activation=None)(x)
     # x = K.layers.ReLU(6., name='pre_encoding')(x)
     x = Reshape((ENCODER_SHAPE,), name='encoding')(x)
     preds = CosineSoftmax(output_dim=out_shape)(x)
@@ -150,7 +155,7 @@ if __name__ == '__main__':
     if MODEL_RESTORE is not None:
         optimizer = K.optimizers.RMSprop(lr=0.0001, decay=0.03)
     else:
-        optimizer = K.optimizers.Adam(lr=0.0005)
+        optimizer = K.optimizers.Adam(lr=0.0001)
         #optimizer = K.optimizers.RMSprop(lr=0.002, decay=0.01)
 
     model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics=['accuracy'])
